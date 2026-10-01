@@ -56,7 +56,18 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -n "$MAC_CERT" ]; then
-            export CSC_LINK="$MAC_CERT" CSC_KEY_PASSWORD="$MAC_CERT_PASSWORD"
+            # Load the certificate into its own keychain (more reliable than electron-builder's CSC_LINK on new macOS runners)
+            KC="$RUNNER_TEMP/hoc-sign.keychain-db"
+            KC_PW="$(openssl rand -hex 16)"
+            echo "$MAC_CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security create-keychain -p "$KC_PW" "$KC"
+            security set-keychain-settings -lut 21600 "$KC"
+            security unlock-keychain -p "$KC_PW" "$KC"
+            security import "$RUNNER_TEMP/cert.p12" -P "$MAC_CERT_PASSWORD" -A -f pkcs12 -k "$KC"
+            rm -f "$RUNNER_TEMP/cert.p12"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KC" > /dev/null
+            security list-keychains -d user -s "$KC" $(security list-keychains -d user | sed 's/"//g')
+            security find-identity -v -p codesigning "$KC"
             node scripts/signing.js mac
           else
             echo "No Apple certificate in the secrets – building unsigned."
