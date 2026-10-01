@@ -9,6 +9,20 @@ const fs = require("fs");
 
 const HOME = "https://terminal.hocapital.net/";
 const IS_MAC = process.platform === "darwin";
+// Own title bar like TradingView: no Windows title bar; the terminal's 48px top bar is the drag area, with the
+// minimise / maximise / close buttons drawn on the right (Windows) or the traffic lights on the left (Mac).
+const TB = 48;
+const TB_BG = "#060709";
+// sign-in pages and the offline page don't know about the app: give them a thin strip to drag the window by
+const STRIP = `(() => {
+  if (document.getElementById("hoc-tb")) return;
+  const d = document.createElement("div");
+  d.id = "hoc-tb";
+  d.textContent = "HOC Terminal";
+  d.style.cssText = "position:fixed;top:0;left:0;right:0;height:${TB}px;z-index:2147483647;-webkit-app-region:drag;background:${TB_BG};border-bottom:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.55);font:500 12px system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:.02em;display:flex;align-items:center;box-sizing:border-box;padding-left:${IS_MAC ? 84 : 16}px;user-select:none";
+  document.documentElement.appendChild(d);
+  document.documentElement.style.setProperty("padding-top", "${TB}px", "important");
+})()`;
 // pages that stay inside the app window: the terminal itself and the sign-in providers
 const INSIDE = [/^terminal\.hocapital\.net$/, /(^|\.)whop\.com$/, /^discord\.com$/, /^accounts\.google\.com$/, /^appleid\.apple\.com$/];
 const inside = (url) => {
@@ -159,8 +173,9 @@ function createWindow(show = true) {
         show: false,
         autoHideMenuBar: true,
         icon: IS_MAC ? undefined : path.join(__dirname, "build", "icon.png"),
-        titleBarStyle: IS_MAC ? "hiddenInset" : "default",
-        trafficLightPosition: { x: 14, y: 14 },
+        titleBarStyle: IS_MAC ? "hiddenInset" : "hidden",
+        trafficLightPosition: { x: 18, y: 17 },
+        ...(IS_MAC ? {} : { titleBarOverlay: { color: TB_BG, symbolColor: "#9aa0a8", height: TB } }),
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
@@ -168,7 +183,7 @@ function createWindow(show = true) {
             sandbox: true,
             spellcheck: true,
             backgroundThrottling: false, // keep checking for alerts while the window is hidden
-            additionalArguments: [`--hoc-version=${app.getVersion()}`],
+            additionalArguments: [`--hoc-version=${app.getVersion()}`, "--hoc-tb=custom"],
         },
     });
     if (st.maximized) win.maximize();
@@ -209,6 +224,16 @@ function createWindow(show = true) {
     // no connection: a friendly page with a retry button
     wc.on("did-fail-load", (e, code, desc, url, isMain) => {
         if (isMain && code !== -3) win.loadFile(path.join(__dirname, "offline.html"), { query: { to: url || HOME } });
+    });
+    wc.on("dom-ready", () => {
+        let host = "";
+        try {
+            host = new URL(wc.getURL()).hostname;
+        } catch {
+            /* file:// (offline page) */
+        }
+        if (host !== "terminal.hocapital.net") wc.executeJavaScript(STRIP).catch(() => {});
+        wc.setVisualZoomLevelLimits(1, 1).catch(() => {}); // no pinch-zoom, like a desktop program
     });
     wc.on("page-title-updated", (e) => {
         e.preventDefault();
