@@ -3,12 +3,20 @@
 // other links open in the normal browser.
 // App settings (Settings › Desktop app in the terminal): open when the computer starts (optionally in the
 // background), keep running in the tray / menu bar when the window is closed, unread count on the app icon.
-const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, session, nativeTheme, screen } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, session, nativeTheme, screen, systemPreferences } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
 const HOME = "https://terminal.hocapital.net/";
 const IS_MAC = process.platform === "darwin";
+// Mac "natural" scrolling (System Settings › Trackpad): charts flip their scroll-to-zoom direction to match
+const naturalScroll = () => {
+    try {
+        return IS_MAC && systemPreferences.getUserDefault("com.apple.swipescrolldirection", "boolean") === true;
+    } catch {
+        return false;
+    }
+};
 // Own title bar like TradingView: no Windows title bar; the terminal's 48px top bar is the drag area, with the
 // minimise / maximise / close buttons drawn on the right (Windows) or the traffic lights on the left (Mac).
 const TB = 48;
@@ -255,7 +263,7 @@ function createWindow(show = true) {
             sandbox: true,
             spellcheck: true,
             backgroundThrottling: false, // keep checking for alerts while the window is hidden
-            additionalArguments: [`--hoc-version=${app.getVersion()}`, "--hoc-tb=custom"],
+            additionalArguments: [`--hoc-version=${app.getVersion()}`, "--hoc-tb=custom", `--hoc-natural=${naturalScroll() ? 1 : 0}`],
         },
     });
     if (st.maximized) win.maximize();
@@ -347,6 +355,17 @@ function handleIpc() {
         applyBadge();
     });
     ipcMain.on("hoc:focus", (e) => fromTerminal(e) && showWindow());
+    // Windows: the terminal reports the colour behind the window buttons (the top bar, or a pop-up's backdrop over it)
+    ipcMain.on("hoc:tbcolor", (e, c) => {
+        if (!fromTerminal(e) || IS_MAC || !win || !/^#[0-9a-f]{6}$/i.test(String(c))) return;
+        const n = parseInt(c.slice(1), 16);
+        const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+        try {
+            win.setTitleBarOverlay({ color: c, symbolColor: lum > 140 ? "#475569" : "#9aa0a8", height: TB });
+        } catch {
+            /* ignore */
+        }
+    });
     // the terminal switched between light and dark: window buttons, window background and system theme follow
     ipcMain.on("hoc:theme", (e, t) => {
         if (!fromTerminal(e)) return;
