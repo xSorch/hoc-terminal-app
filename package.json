@@ -1,7 +1,7 @@
 {
   "name": "hoc-terminal-desktop",
   "productName": "HOC Terminal",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "HOC Terminal desktop app for Windows and macOS",
   "author": "HO Capital",
   "homepage": "https://hocapital.net",
@@ -32,7 +32,8 @@
       "offline.html",
       "package.json",
       "build/icon.png",
-      "build/icon-win.png"
+      "build/icon-win.png",
+      "build/icon.ico"
     ],
     "artifactName": "HOC-Terminal-${version}-${os}-${arch}.${ext}",
     "win": {
@@ -45,7 +46,7 @@
           ]
         }
       ],
-      "icon": "build/icon-win.png"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
