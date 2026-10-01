@@ -1,7 +1,7 @@
 {
   "name": "hoc-terminal-desktop",
   "productName": "HOC Terminal",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "HOC Terminal desktop app for Windows and macOS",
   "author": "HO Capital",
   "homepage": "https://hocapital.net",
@@ -30,7 +30,8 @@
       "main.js",
       "preload.js",
       "offline.html",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "artifactName": "HOC-Terminal-${version}-${os}-${arch}.${ext}",
     "win": {
