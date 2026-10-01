@@ -1,7 +1,7 @@
 {
   "name": "hoc-terminal-desktop",
   "productName": "HOC Terminal",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "HOC Terminal desktop app for Windows and macOS",
   "author": "HO Capital",
   "homepage": "https://hocapital.net",
@@ -52,6 +52,7 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
+      "include": "build/installer.nsh",
       "createStartMenuShortcut": true,
       "shortcutName": "HOC Terminal",
       "artifactName": "HOC-Terminal-Setup-${version}-${arch}.${ext}"
