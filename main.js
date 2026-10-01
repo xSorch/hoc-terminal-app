@@ -97,7 +97,8 @@ let tray = null;
 let quitting = false;
 let unread = 0;
 let toldTray = false;
-const appIcon = () => nativeImage.createFromPath(path.join(__dirname, "build", "icon.png"));
+const ICON_FILE = path.join(__dirname, "build", IS_MAC ? "icon.png" : "icon-win.png"); // Windows: white logo, no square
+const appIcon = () => nativeImage.createFromPath(ICON_FILE);
 
 function showWindow() {
     if (!win) return createWindow(true);
@@ -172,7 +173,7 @@ function createWindow(show = true) {
         backgroundColor: "#050505",
         show: false,
         autoHideMenuBar: true,
-        icon: IS_MAC ? undefined : path.join(__dirname, "build", "icon.png"),
+        icon: IS_MAC ? undefined : ICON_FILE,
         titleBarStyle: IS_MAC ? "hiddenInset" : "hidden",
         trafficLightPosition: { x: 18, y: 17 },
         ...(IS_MAC ? {} : { titleBarOverlay: { color: TB_BG, symbolColor: "#9aa0a8", height: TB } }),
