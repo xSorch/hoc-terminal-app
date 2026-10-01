@@ -27,8 +27,19 @@ const STRIP = `(() => {
   if (document.getElementById("hoc-tb")) return;
   const d = document.createElement("div");
   d.id = "hoc-tb";
-  d.textContent = "HOC Terminal";
-  d.style.cssText = "position:fixed;top:0;left:0;right:0;height:${TB}px;z-index:2147483647;-webkit-app-region:drag;background:${TB_BG};border-bottom:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.55);font:500 12px system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:.02em;display:flex;align-items:center;box-sizing:border-box;padding-left:${IS_MAC ? 84 : 16}px;user-select:none";
+  d.style.cssText = "position:fixed;top:0;left:0;right:0;height:${TB}px;z-index:2147483647;-webkit-app-region:drag;background:${TB_BG};border-bottom:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.55);font:500 12px system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:.02em;display:flex;align-items:center;gap:12px;box-sizing:border-box;padding-left:${IS_MAC ? 84 : 12}px;user-select:none";
+  // "Back" to the HOC sign-in page, so members can pick another way to sign in (Whop / Discord)
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = "\u2039  Back to sign-in";
+  b.title = "Back to the HOC Terminal sign-in page";
+  b.style.cssText = "-webkit-app-region:no-drag;cursor:pointer;height:30px;padding:0 12px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#e5e7eb;font:500 12.5px system-ui,-apple-system,Segoe UI,sans-serif";
+  b.onmouseenter = () => (b.style.background = "rgba(255,255,255,.12)");
+  b.onmouseleave = () => (b.style.background = "rgba(255,255,255,.06)");
+  b.onclick = () => location.assign("https://terminal.hocapital.net/login");
+  const t = document.createElement("span");
+  t.textContent = "HOC Terminal";
+  d.append(b, t);
   document.documentElement.appendChild(d);
   document.documentElement.style.setProperty("padding-top", "${TB}px", "important");
 })()`;
