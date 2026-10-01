@@ -29,12 +29,39 @@ jobs:
         shell: bash
         run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
       - run: npm install --no-audit --no-fund
+      # Code signing switches on by itself when the certificates are saved as repository secrets
+      # (Settings → Secrets and variables → Actions). Without them the builds are unsigned, as before.
       - name: Build Windows installer
         if: runner.os == 'Windows'
-        run: npm run dist:win
+        shell: bash
+        env:
+          WIN_CERT: ${{ secrets.WIN_CERT_P12_BASE64 }}
+          WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+          WIN_PUBLISHER_NAME: ${{ secrets.WIN_PUBLISHER_NAME }}
+        run: |
+          if [ -n "$WIN_CERT" ]; then
+            export CSC_LINK="$WIN_CERT" CSC_KEY_PASSWORD="$WIN_CERT_PASSWORD"
+            node scripts/signing.js win
+          else
+            echo "No Windows certificate in the secrets – building unsigned."
+          fi
+          npm run dist:win
       - name: Build macOS app
         if: runner.os == 'macOS'
-        run: npm run dist:mac
+        env:
+          MAC_CERT: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$MAC_CERT" ]; then
+            export CSC_LINK="$MAC_CERT" CSC_KEY_PASSWORD="$MAC_CERT_PASSWORD"
+            node scripts/signing.js mac
+          else
+            echo "No Apple certificate in the secrets – building unsigned."
+          fi
+          npm run dist:mac
       - name: Publish to the release
         uses: softprops/action-gh-release@v2
         with:
