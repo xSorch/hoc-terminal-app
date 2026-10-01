@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>HOC Terminal</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+html,body{height:100%;margin:0;background:#050505;color:#fff;font-family:Inter,-apple-system,"Segoe UI",sans-serif}
+body{display:grid;place-items:center;-webkit-app-region:drag}
+.box{text-align:center;max-width:380px;padding:24px}
+b{display:block;font-size:13px;letter-spacing:.3em;color:rgba(255,255,255,.5);margin-bottom:18px}
+h1{font-size:22px;margin:0 0 8px}p{color:rgba(255,255,255,.6);font-size:14px;line-height:1.6;margin:0 0 22px}
+button{-webkit-app-region:no-drag;height:42px;padding:0 22px;border-radius:10px;border:0;background:#fff;color:#050505;font:600 14px inherit;cursor:pointer}
+</style></head>
+<body><div class="box"><b>HO CAPITAL</b><h1>Can't reach the HOC Terminal</h1><p>Check your internet connection. The app will try again on its own.</p><button id="r">Try again</button></div>
+<script>
+const to=new URLSearchParams(location.search).get("to")||"https://terminal.hocapital.net/";
+const go=()=>{location.href=/^https:\/\/terminal\.hocapital\.net\//.test(to)?to:"https://terminal.hocapital.net/"};
+document.getElementById("r").onclick=go;window.addEventListener("online",go);setTimeout(go,15000);
+</script></body></html>
