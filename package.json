@@ -1,0 +1,79 @@
+{
+  "name": "hoc-terminal-desktop",
+  "productName": "HOC Terminal",
+  "version": "1.0.0",
+  "description": "HOC Terminal desktop app for Windows and macOS",
+  "author": "HO Capital",
+  "homepage": "https://hocapital.net",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "node scripts/icon.mjs && electron .",
+    "icon": "node scripts/icon.mjs",
+    "dist:win": "node scripts/icon.mjs && electron-builder --win --publish never",
+    "dist:mac": "node scripts/icon.mjs && electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "net.hocapital.terminal",
+    "productName": "HOC Terminal",
+    "copyright": "\u00a9 HO Capital",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "offline.html",
+      "package.json"
+    ],
+    "artifactName": "HOC-Terminal-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "HOC Terminal",
+      "artifactName": "HOC-Terminal-Setup-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.finance",
+      "icon": "build/icon.png",
+      "darkModeSupport": true,
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "HOC Terminal",
+      "artifactName": "HOC-Terminal-${version}-mac.${ext}"
+    }
+  },
+  "type": "commonjs"
+}
