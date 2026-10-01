@@ -13,6 +13,7 @@ const IS_MAC = process.platform === "darwin";
 // minimise / maximise / close buttons drawn on the right (Windows) or the traffic lights on the left (Mac).
 const TB = 48;
 const TB_BG = "#060709";
+const overlayFor = (light) => (light ? { color: "#fefefe", symbolColor: "#475569", height: TB } : { color: TB_BG, symbolColor: "#9aa0a8", height: TB });
 // sign-in pages and the offline page don't know about the app: give them a thin strip to drag the window by
 const STRIP = `(() => {
   if (document.getElementById("hoc-tb")) return;
@@ -43,19 +44,21 @@ const fromTerminal = (e) => {
 
 // ----- settings (stored next to the window size in the app's data folder) -----
 const DEFAULTS = { openAtLogin: false, startHidden: false, background: true, badge: true };
+let lightUi = false; // the terminal's Appearance (light / dark), remembered so the next start opens in the right colours
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 let S = { ...DEFAULTS };
 function loadSettings() {
     try {
         const s = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
         for (const k of Object.keys(DEFAULTS)) if (typeof s[k] === "boolean") S[k] = s[k];
+        lightUi = s.lightUi === true;
     } catch {
         /* first run */
     }
 }
 function saveSettings() {
     try {
-        fs.writeFileSync(settingsFile(), JSON.stringify(S));
+        fs.writeFileSync(settingsFile(), JSON.stringify({ ...S, lightUi }));
     } catch {
         /* ignore */
     }
@@ -188,13 +191,13 @@ function createWindow(show = true) {
         minWidth: 900,
         minHeight: 600,
         title: "HOC Terminal",
-        backgroundColor: "#050505",
+        backgroundColor: lightUi ? "#f4f5f7" : "#050505",
         show: false,
         autoHideMenuBar: true,
         icon: IS_MAC ? undefined : ICON_FILE,
         titleBarStyle: IS_MAC ? "hiddenInset" : "hidden",
         trafficLightPosition: { x: 18, y: 17 },
-        ...(IS_MAC ? {} : { titleBarOverlay: { color: TB_BG, symbolColor: "#9aa0a8", height: TB } }),
+        ...(IS_MAC ? {} : { titleBarOverlay: overlayFor(lightUi) }),
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
@@ -294,6 +297,24 @@ function handleIpc() {
         applyBadge();
     });
     ipcMain.on("hoc:focus", (e) => fromTerminal(e) && showWindow());
+    // the terminal switched between light and dark: window buttons, window background and system theme follow
+    ipcMain.on("hoc:theme", (e, t) => {
+        if (!fromTerminal(e)) return;
+        const light = t === "light";
+        nativeTheme.themeSource = light ? "light" : "dark";
+        if (win) {
+            try {
+                if (!IS_MAC) win.setTitleBarOverlay(overlayFor(light));
+                win.setBackgroundColor(light ? "#f4f5f7" : "#050505");
+            } catch {
+                /* ignore */
+            }
+        }
+        if (light !== lightUi) {
+            lightUi = light;
+            saveSettings();
+        }
+    });
     ipcMain.handle("hoc:test", (e) => {
         if (!fromTerminal(e) || !Notification.isSupported()) return false;
         const n = new Notification({ title: "HOC Terminal", body: "Notifications are working. You'll see alerts like this one.", icon: IS_MAC ? undefined : appIcon() });
@@ -350,9 +371,9 @@ else {
     app.on("second-instance", () => showWindow());
     app.on("before-quit", () => (quitting = true));
     app.whenReady().then(() => {
-        nativeTheme.themeSource = "dark";
-        if (process.platform === "win32") app.setAppUserModelId("net.hocapital.terminal");
         loadSettings();
+        nativeTheme.themeSource = lightUi ? "light" : "dark";
+        if (process.platform === "win32") app.setAppUserModelId("net.hocapital.terminal");
         installerChoice();
         applyLogin();
         setTimeout(installerChoice, 6000); // "Run now" starts the app a moment before the startup box is saved
