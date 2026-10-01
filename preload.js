@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     setBadge: (n) => ipcRenderer.send("hoc:badge", n),
     focus: () => ipcRenderer.send("hoc:focus"),
     testNotification: () => ipcRenderer.invoke("hoc:test"),
+    setTheme: (t) => ipcRenderer.send("hoc:theme", t), // light / dark: colours the window buttons to match
 });
