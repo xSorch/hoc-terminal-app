@@ -67,6 +67,24 @@ function applyLogin() {
         /* not supported here */
     }
 }
+// Windows installer: "Open HOC Terminal when my computer starts" on its last page (ticked by default).
+// The installer leaves its answer in startup-choice next to the app; apply it to the app's own setting once.
+const choiceFile = () => path.join(path.dirname(process.execPath), "startup-choice");
+function installerChoice() {
+    if (IS_MAC) return;
+    let v = "";
+    try {
+        v = fs.readFileSync(choiceFile(), "utf8").trim();
+        fs.unlinkSync(choiceFile());
+    } catch {
+        return; // no installer answer waiting
+    }
+    if (v !== "0" && v !== "1") return;
+    S.openAtLogin = v === "1";
+    if (!S.openAtLogin) S.startHidden = false;
+    saveSettings();
+    applyLogin();
+}
 const launchedHidden = () => process.argv.includes("--hidden") || (IS_MAC && app.getLoginItemSettings().wasOpenedAsHidden);
 
 // remember the window size and position between launches
@@ -335,7 +353,9 @@ else {
         nativeTheme.themeSource = "dark";
         if (process.platform === "win32") app.setAppUserModelId("net.hocapital.terminal");
         loadSettings();
+        installerChoice();
         applyLogin();
+        setTimeout(installerChoice, 6000); // "Run now" starts the app a moment before the startup box is saved
         handleDownloads();
         handlePermissions();
         handleIpc();
