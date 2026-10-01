@@ -1,0 +1,46 @@
+# Builds the HOC Terminal desktop app and publishes the installers as a public release in this repository.
+# Run it from Actions → "Release" → Run workflow and enter the version (e.g. 1.0.0).
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 1.0.0)"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Set the version
+        shell: bash
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+      - run: npm install --no-audit --no-fund
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        run: npm run dist:mac
+      - name: Publish to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: HOC Terminal ${{ inputs.version }}
+          body: "HOC Terminal for Windows and Mac. Download it from the Downloads page in the HOC Terminal."
+          files: |
+            dist/*.exe
+            dist/*.dmg
