@@ -118,7 +118,7 @@ let tray = null;
 let quitting = false;
 let unread = 0;
 let toldTray = false;
-const ICON_FILE = path.join(__dirname, "build", IS_MAC ? "icon.png" : "icon-win.png"); // Windows: white logo, no square
+const ICON_FILE = path.join(__dirname, "build", IS_MAC ? "icon.png" : "icon.ico"); // Windows: white logo, no square, every size sharp
 const appIcon = () => nativeImage.createFromPath(ICON_FILE);
 
 function showWindow() {
@@ -151,30 +151,80 @@ function updateTray() {
     );
 }
 
-// unread notifications on the app icon: number badge on Mac, red dot overlay on the Windows taskbar
-let dot = null;
-function redDot() {
-    if (dot) return dot;
-    const n = 16;
-    const buf = Buffer.alloc(n * n * 4);
-    for (let y = 0; y < n; y++)
-        for (let x = 0; x < n; x++) {
-            const d = Math.hypot(x - 7.5, y - 7.5);
-            const i = (y * n + x) * 4;
-            const a = d <= 6 ? 255 : d <= 7 ? Math.round((7 - d) * 255) : 0;
-            buf[i] = 68; // BGRA
-            buf[i + 1] = 68;
-            buf[i + 2] = 239;
-            buf[i + 3] = a;
+// unread notifications on the app icon: number badge on Mac; on the Windows taskbar a red badge with the
+// count (1–9, then "9+") and a dark ring so it stands out from the white logo – like Discord's
+const DIGITS = {
+    0: ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+    1: ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+    2: ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+    3: ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
+    4: ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+    5: ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+    6: ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+    7: ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+    8: ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+    9: ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
+    "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
+};
+const badges = new Map();
+function countBadge(count) {
+    const label = count > 9 ? "9+" : String(count);
+    if (badges.has(label)) return badges.get(label);
+    const N = 32; // drawn at 2x for a sharp 16 px overlay
+    const SS = 4; // supersampling for smooth edges
+    const buf = Buffer.alloc(N * N * 4);
+    const c = (N - 1) / 2;
+    const R = 15.5; // outer edge (dark ring)
+    const r = 13.5; // red disc
+    // the digits: 5 × 7 pixel font, each font pixel 2 × 2 (1 × 1 for "9+")
+    const px = label.length > 1 ? 2 : 2;
+    const gw = label.length * 5 + (label.length - 1);
+    const sx = Math.round(c + 0.5 - (gw * px) / 2);
+    const sy = Math.round(c + 0.5 - (7 * px) / 2);
+    const on = (x, y) => {
+        const gx = Math.floor((x - sx) / px);
+        const gy = Math.floor((y - sy) / px);
+        if (gy < 0 || gy > 6 || gx < 0 || gx >= gw) return false;
+        const ci = Math.floor(gx / 6);
+        const cx = gx % 6;
+        return cx < 5 && DIGITS[label[ci]][gy][cx] === "1";
+    };
+    for (let y = 0; y < N; y++)
+        for (let x = 0; x < N; x++) {
+            let outer = 0;
+            let inner = 0;
+            for (let j = 0; j < SS; j++)
+                for (let i = 0; i < SS; i++) {
+                    const d = Math.hypot(x + (i + 0.5) / SS - 0.5 - c, y + (j + 0.5) / SS - 0.5 - c);
+                    if (d <= R) outer++;
+                    if (d <= r) inner++;
+                }
+            const ao = outer / (SS * SS);
+            const ai = inner / (SS * SS);
+            // colour: ring #1c1c1f, disc #ef4444, digits white
+            let [rr, gg, bb] = [28, 28, 31];
+            if (ai > 0) {
+                const t = ai;
+                rr = Math.round(28 + (239 - 28) * t);
+                gg = Math.round(28 + (68 - 28) * t);
+                bb = Math.round(31 + (68 - 31) * t);
+            }
+            if (on(x, y)) [rr, gg, bb] = [255, 255, 255];
+            const k = (y * N + x) * 4;
+            buf[k] = bb; // BGRA
+            buf[k + 1] = gg;
+            buf[k + 2] = rr;
+            buf[k + 3] = Math.round(ao * 255);
         }
-    dot = nativeImage.createFromBitmap(buf, { width: n, height: n });
-    return dot;
+    const img = nativeImage.createFromBitmap(buf, { width: N, height: N, scaleFactor: 2 });
+    badges.set(label, img);
+    return img;
 }
 function applyBadge() {
     const n = S.badge ? unread : 0;
     try {
         if (IS_MAC) app.setBadgeCount(n);
-        else if (win) win.setOverlayIcon(n ? redDot() : null, n ? `${n} unread` : "");
+        else if (win) win.setOverlayIcon(n ? countBadge(n) : null, n ? `${n} unread` : "");
     } catch {
         /* ignore */
     }
