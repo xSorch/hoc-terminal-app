@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     app: true,
     platform: process.platform,
     version: arg ? arg.slice("--hoc-version=".length) : "",
+    titleBar: "custom", // the window draws its own title bar (the terminal's top bar is the drag area)
     getSettings: () => ipcRenderer.invoke("hoc:get"),
     setSetting: (key, value) => ipcRenderer.invoke("hoc:set", key, value),
     setBadge: (n) => ipcRenderer.send("hoc:badge", n),
