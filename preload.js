@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     app: true,
     platform: process.platform,
     version: arg ? arg.slice("--hoc-version=".length) : "",
+    naturalScroll: (process.argv || []).includes("--hoc-natural=1"), // Mac trackpad "natural" scrolling is on
     titleBar: "custom", // the window draws its own title bar (the terminal's top bar is the drag area)
     getSettings: () => ipcRenderer.invoke("hoc:get"),
     setSetting: (key, value) => ipcRenderer.invoke("hoc:set", key, value),
@@ -14,4 +15,5 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     focus: () => ipcRenderer.send("hoc:focus"),
     testNotification: () => ipcRenderer.invoke("hoc:test"),
     setTheme: (t) => ipcRenderer.send("hoc:theme", t), // light / dark: colours the window buttons to match
+    setTitleColor: (c) => ipcRenderer.send("hoc:tbcolor", c), // Windows: colour behind the window buttons (dims with pop-ups)
 });
