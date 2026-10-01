@@ -1,11 +1,14 @@
 // HOC Terminal desktop app (Windows + macOS). A window around the live terminal, so every update to
 // terminal.hocapital.net shows up in the app straight away. Sign-in (Whop / Discord) happens inside the window;
 // other links open in the normal browser.
-const { app, BrowserWindow, Menu, shell, session, nativeTheme, screen } = require("electron");
+// App settings (Settings › Desktop app in the terminal): open when the computer starts (optionally in the
+// background), keep running in the tray / menu bar when the window is closed, unread count on the app icon.
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, session, nativeTheme, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
 const HOME = "https://terminal.hocapital.net/";
+const IS_MAC = process.platform === "darwin";
 // pages that stay inside the app window: the terminal itself and the sign-in providers
 const INSIDE = [/^terminal\.hocapital\.net$/, /(^|\.)whop\.com$/, /^discord\.com$/, /^accounts\.google\.com$/, /^appleid\.apple\.com$/];
 const inside = (url) => {
@@ -16,6 +19,41 @@ const inside = (url) => {
         return false;
     }
 };
+const fromTerminal = (e) => {
+    try {
+        return new URL(e.senderFrame ? e.senderFrame.url : e.sender.getURL()).hostname === "terminal.hocapital.net";
+    } catch {
+        return false;
+    }
+};
+
+// ----- settings (stored next to the window size in the app's data folder) -----
+const DEFAULTS = { openAtLogin: false, startHidden: false, background: true, badge: true };
+const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
+let S = { ...DEFAULTS };
+function loadSettings() {
+    try {
+        const s = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
+        for (const k of Object.keys(DEFAULTS)) if (typeof s[k] === "boolean") S[k] = s[k];
+    } catch {
+        /* first run */
+    }
+}
+function saveSettings() {
+    try {
+        fs.writeFileSync(settingsFile(), JSON.stringify(S));
+    } catch {
+        /* ignore */
+    }
+}
+function applyLogin() {
+    try {
+        app.setLoginItemSettings({ openAtLogin: S.openAtLogin, openAsHidden: S.openAtLogin && S.startHidden, args: S.openAtLogin && S.startHidden ? ["--hidden"] : [] });
+    } catch {
+        /* not supported here */
+    }
+}
+const launchedHidden = () => process.argv.includes("--hidden") || (IS_MAC && app.getLoginItemSettings().wasOpenedAsHidden);
 
 // remember the window size and position between launches
 const stateFile = () => path.join(app.getPath("userData"), "window.json");
@@ -31,17 +69,83 @@ function loadState() {
         return { width: 1440, height: 900, maximized: true };
     }
 }
-function saveState(win) {
+function saveState(w) {
     try {
-        const b = win.getNormalBounds();
-        fs.writeFileSync(stateFile(), JSON.stringify({ ...b, maximized: win.isMaximized() }));
+        const b = w.getNormalBounds();
+        fs.writeFileSync(stateFile(), JSON.stringify({ ...b, maximized: w.isMaximized() }));
     } catch {
         /* ignore */
     }
 }
 
 let win = null;
-function createWindow() {
+let tray = null;
+let quitting = false;
+let unread = 0;
+let toldTray = false;
+const appIcon = () => nativeImage.createFromPath(path.join(__dirname, "build", "icon.png"));
+
+function showWindow() {
+    if (!win) return createWindow(true);
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+}
+
+// tray (Windows) / menu bar (Mac) icon: open the terminal or quit; shows the unread count in its tooltip
+function updateTray() {
+    const want = S.background || S.startHidden;
+    if (!want) {
+        if (tray) tray.destroy();
+        tray = null;
+        return;
+    }
+    if (!tray) {
+        const img = appIcon().resize({ width: IS_MAC ? 18 : 16, height: IS_MAC ? 18 : 16 });
+        tray = new Tray(img);
+        tray.on("click", () => showWindow());
+    }
+    tray.setToolTip(unread ? `HOC Terminal – ${unread} unread` : "HOC Terminal");
+    tray.setContextMenu(
+        Menu.buildFromTemplate([
+            { label: "Open HOC Terminal", click: () => showWindow() },
+            { type: "separator" },
+            { label: "Quit HOC Terminal", click: () => ((quitting = true), app.quit()) },
+        ])
+    );
+}
+
+// unread notifications on the app icon: number badge on Mac, red dot overlay on the Windows taskbar
+let dot = null;
+function redDot() {
+    if (dot) return dot;
+    const n = 16;
+    const buf = Buffer.alloc(n * n * 4);
+    for (let y = 0; y < n; y++)
+        for (let x = 0; x < n; x++) {
+            const d = Math.hypot(x - 7.5, y - 7.5);
+            const i = (y * n + x) * 4;
+            const a = d <= 6 ? 255 : d <= 7 ? Math.round((7 - d) * 255) : 0;
+            buf[i] = 68; // BGRA
+            buf[i + 1] = 68;
+            buf[i + 2] = 239;
+            buf[i + 3] = a;
+        }
+    dot = nativeImage.createFromBitmap(buf, { width: n, height: n });
+    return dot;
+}
+function applyBadge() {
+    const n = S.badge ? unread : 0;
+    try {
+        if (IS_MAC) app.setBadgeCount(n);
+        else if (win) win.setOverlayIcon(n ? redDot() : null, n ? `${n} unread` : "");
+    } catch {
+        /* ignore */
+    }
+    updateTray();
+}
+
+function createWindow(show = true) {
     const st = loadState();
     win = new BrowserWindow({
         x: st.x,
@@ -54,7 +158,8 @@ function createWindow() {
         backgroundColor: "#050505",
         show: false,
         autoHideMenuBar: true,
-        titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+        icon: IS_MAC ? undefined : path.join(__dirname, "build", "icon.png"),
+        titleBarStyle: IS_MAC ? "hiddenInset" : "default",
         trafficLightPosition: { x: 14, y: 14 },
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
@@ -62,11 +167,25 @@ function createWindow() {
             nodeIntegration: false,
             sandbox: true,
             spellcheck: true,
+            backgroundThrottling: false, // keep checking for alerts while the window is hidden
+            additionalArguments: [`--hoc-version=${app.getVersion()}`],
         },
     });
     if (st.maximized) win.maximize();
-    win.once("ready-to-show", () => win.show());
-    ["resize", "move", "close"].forEach((e) => win.on(e, () => saveState(win)));
+    win.once("ready-to-show", () => show && win.show());
+    ["resize", "move"].forEach((e) => win.on(e, () => saveState(win)));
+    // closing the window keeps the app running in the tray / menu bar when "Keep running in the background" is on
+    win.on("close", (e) => {
+        saveState(win);
+        if (quitting || !S.background) return;
+        e.preventDefault();
+        win.hide();
+        if (!toldTray && !IS_MAC && Notification.isSupported()) {
+            toldTray = true;
+            new Notification({ title: "HOC Terminal is still running", body: "You'll keep getting alerts. Open it again from the icon in the taskbar tray.", silent: true }).show();
+        }
+    });
+    win.on("closed", () => (win = null));
 
     const wc = win.webContents;
     // a normal Chrome user agent (sign-in pages refuse "embedded browser" agents), tagged so the terminal knows it's the app
@@ -91,11 +210,12 @@ function createWindow() {
     wc.on("did-fail-load", (e, code, desc, url, isMain) => {
         if (isMain && code !== -3) win.loadFile(path.join(__dirname, "offline.html"), { query: { to: url || HOME } });
     });
-    wc.on("page-title-updated", (e, t) => {
+    wc.on("page-title-updated", (e) => {
         e.preventDefault();
-        win.setTitle(t && t !== "HOC Terminal" ? `${t} · HOC Terminal` : "HOC Terminal");
+        win.setTitle("HOC Terminal");
     });
     win.loadURL(HOME);
+    applyBadge();
 }
 
 // downloads (CSV exports, chart snapshots) go to the Downloads folder with a save dialog
@@ -104,7 +224,7 @@ function handleDownloads() {
         item.setSaveDialogOptions({ defaultPath: path.join(app.getPath("downloads"), item.getFilename()) });
     });
 }
-// camera / microphone / notifications: only notifications and clipboard are allowed (for alerts and copy buttons)
+// only notifications, clipboard and full screen are allowed, and only for the terminal / sign-in pages
 function handlePermissions() {
     session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => {
         const ok = ["notifications", "clipboard-sanitized-write", "clipboard-read", "fullscreen"].includes(perm) && inside(details.requestingUrl || wc.getURL());
@@ -112,14 +232,52 @@ function handlePermissions() {
     });
 }
 
+// the terminal talks to the app through these (see preload.js)
+function handleIpc() {
+    ipcMain.handle("hoc:get", (e) => (fromTerminal(e) ? { settings: S, version: app.getVersion(), platform: process.platform } : null));
+    ipcMain.handle("hoc:set", (e, key, value) => {
+        if (!fromTerminal(e) || !(key in DEFAULTS) || typeof value !== "boolean") return null;
+        S[key] = value;
+        saveSettings();
+        if (key === "openAtLogin" || key === "startHidden") applyLogin();
+        if (key === "background" || key === "startHidden") updateTray();
+        if (key === "badge") applyBadge();
+        return S;
+    });
+    ipcMain.on("hoc:badge", (e, n) => {
+        if (!fromTerminal(e)) return;
+        unread = Math.max(0, Math.min(999, Math.round(Number(n) || 0)));
+        applyBadge();
+    });
+    ipcMain.on("hoc:focus", (e) => fromTerminal(e) && showWindow());
+    ipcMain.handle("hoc:test", (e) => {
+        if (!fromTerminal(e) || !Notification.isSupported()) return false;
+        const n = new Notification({ title: "HOC Terminal", body: "Notifications are working. You'll see alerts like this one.", icon: IS_MAC ? undefined : appIcon() });
+        n.on("click", () => showWindow());
+        n.show();
+        return true;
+    });
+}
+
 function buildMenu() {
-    const isMac = process.platform === "darwin";
-    const go = (p) => win && win.loadURL(new URL(p, HOME).toString());
+    const go = (p) => {
+        showWindow();
+        win && win.loadURL(new URL(p, HOME).toString());
+    };
     const template = [
-        ...(isMac ? [{ role: "appMenu" }] : []),
+        ...(IS_MAC ? [{ role: "appMenu" }] : []),
         {
             label: "File",
-            submenu: [{ label: "Home", accelerator: "CmdOrCtrl+Shift+H", click: () => go("/") }, { label: "Journal", click: () => go("/journal") }, { label: "Backtesting", click: () => go("/backtesting") }, { label: "Market Analysis", click: () => go("/analysis") }, { type: "separator" }, isMac ? { role: "close" } : { role: "quit" }],
+            submenu: [
+                { label: "Home", accelerator: "CmdOrCtrl+Shift+H", click: () => go("/") },
+                { label: "Journal", click: () => go("/journal") },
+                { label: "Backtesting", click: () => go("/backtesting") },
+                { label: "Market Analysis", click: () => go("/analysis") },
+                { type: "separator" },
+                { label: "App settings…", accelerator: "CmdOrCtrl+,", click: () => go("/settings#desktop") },
+                { type: "separator" },
+                { label: IS_MAC ? "Close Window" : "Quit", accelerator: IS_MAC ? "Cmd+W" : "Ctrl+Q", click: () => (IS_MAC ? win && win.close() : ((quitting = true), app.quit())) },
+            ],
         },
         { role: "editMenu" },
         {
@@ -129,35 +287,38 @@ function buildMenu() {
         {
             label: "Navigate",
             submenu: [
-                { label: "Back", accelerator: isMac ? "Cmd+[" : "Alt+Left", click: () => win && win.webContents.navigationHistory.canGoBack() && win.webContents.navigationHistory.goBack() },
-                { label: "Forward", accelerator: isMac ? "Cmd+]" : "Alt+Right", click: () => win && win.webContents.navigationHistory.canGoForward() && win.webContents.navigationHistory.goForward() },
+                { label: "Back", accelerator: IS_MAC ? "Cmd+[" : "Alt+Left", click: () => win && win.webContents.navigationHistory.canGoBack() && win.webContents.navigationHistory.goBack() },
+                { label: "Forward", accelerator: IS_MAC ? "Cmd+]" : "Alt+Right", click: () => win && win.webContents.navigationHistory.canGoForward() && win.webContents.navigationHistory.goForward() },
             ],
         },
         { role: "windowMenu" },
         {
             role: "help",
-            submenu: [{ label: "hocapital.net", click: () => shell.openExternal("https://hocapital.net") }, { label: "Changelog", click: () => shell.openExternal("https://hocapital.net/changelog") }],
+            submenu: [{ label: "Downloads and updates", click: () => go("/downloads") }, { label: "hocapital.net", click: () => shell.openExternal("https://hocapital.net") }, { label: "Changelog", click: () => shell.openExternal("https://hocapital.net/changelog") }],
         },
     ];
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// one window only: opening the app again focuses it
+// one window only: opening the app again shows it
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-    app.on("second-instance", () => {
-        if (!win) return;
-        if (win.isMinimized()) win.restore();
-        win.focus();
-    });
+    app.on("second-instance", () => showWindow());
+    app.on("before-quit", () => (quitting = true));
     app.whenReady().then(() => {
         nativeTheme.themeSource = "dark";
         if (process.platform === "win32") app.setAppUserModelId("net.hocapital.terminal");
+        loadSettings();
+        applyLogin();
         handleDownloads();
         handlePermissions();
+        handleIpc();
         buildMenu();
-        createWindow();
-        app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
+        createWindow(!launchedHidden());
+        updateTray();
+        app.on("activate", () => showWindow());
     });
-    app.on("window-all-closed", () => process.platform !== "darwin" && app.quit());
+    app.on("window-all-closed", () => {
+        if (!IS_MAC && !S.background) app.quit();
+    });
 }
