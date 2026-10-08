@@ -292,6 +292,10 @@ function createWindow(show = true) {
         }
     });
     win.on("closed", () => (win = null));
+    // full screen: the terminal's full screen button asks the app for native full screen (one clean resize, no flicker)
+    const sendFs = () => win && !win.isDestroyed() && win.webContents.send("hoc:fs", win.isFullScreen());
+    win.on("enter-full-screen", sendFs);
+    win.on("leave-full-screen", sendFs);
 
     const wc = win.webContents;
     // a normal Chrome user agent (sign-in pages refuse "embedded browser" agents), tagged so the terminal knows it's the app
@@ -377,6 +381,12 @@ function handleIpc() {
             /* ignore */
         }
     });
+    // full screen from the terminal (button or F11): native window full screen
+    ipcMain.on("hoc:fullscreen", (e, on) => {
+        if (!fromTerminal(e) || !win) return;
+        win.setFullScreen(typeof on === "boolean" ? on : !win.isFullScreen());
+    });
+    ipcMain.handle("hoc:isfs", (e) => Boolean(fromTerminal(e) && win && win.isFullScreen()));
     // the terminal switched between light and dark: window buttons, window background and system theme follow
     ipcMain.on("hoc:theme", (e, t) => {
         if (!fromTerminal(e)) return;
