@@ -62,7 +62,7 @@ const fromTerminal = (e) => {
 };
 
 // ----- settings (stored next to the window size in the app's data folder) -----
-const DEFAULTS = { openAtLogin: false, startHidden: false, background: true, badge: true };
+const DEFAULTS = { openAtLogin: false, startHidden: false, background: true, badge: true, trayStatus: true, hocToasts: true };
 let lightUi = false; // the terminal's Appearance (light / dark), remembered so the next start opens in the right colours
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 let S = { ...DEFAULTS };
@@ -148,8 +148,10 @@ function showWindow() {
 }
 
 // tray (Windows) / menu bar (Mac) icon: open the terminal or quit; shows the unread count in its tooltip
+// today's P&L and the open session (v1.9), sent by the terminal every few minutes
+let status = { pnl: "", session: "" };
 function updateTray() {
-    const want = S.background || S.startHidden;
+    const want = S.background || S.startHidden || S.trayStatus;
     if (!want) {
         if (tray) tray.destroy();
         tray = null;
@@ -160,9 +162,18 @@ function updateTray() {
         tray = new Tray(img);
         tray.on("click", () => showWindow());
     }
-    tray.setToolTip(unread ? `HOC Terminal – ${unread} unread` : "HOC Terminal");
+    const line = S.trayStatus ? [status.pnl && `Today ${status.pnl}`, status.session].filter(Boolean).join(" · ") : "";
+    tray.setToolTip(["HOC Terminal", line, unread ? `${unread} unread` : ""].filter(Boolean).join(" – "));
+    if (IS_MAC) {
+        try {
+            tray.setTitle(S.trayStatus && status.pnl ? ` ${status.pnl}` : "", { fontType: "monospacedDigit" });
+        } catch {
+            // older macOS
+        }
+    }
     tray.setContextMenu(
         Menu.buildFromTemplate([
+            ...(S.trayStatus ? [{ label: status.pnl ? `Today ${status.pnl}` : "No trades today", enabled: false }, { label: status.session || "No session open", enabled: false }, { type: "separator" }] : []),
             { label: "Open HOC Terminal", click: () => showWindow() },
             { type: "separator" },
             { label: "Quit HOC Terminal", click: () => ((quitting = true), app.quit()) },
@@ -360,7 +371,7 @@ function handleIpc() {
         S[key] = value;
         saveSettings();
         if (key === "openAtLogin" || key === "startHidden") applyLogin();
-        if (key === "background" || key === "startHidden") updateTray();
+        if (key === "background" || key === "startHidden" || key === "trayStatus") updateTray();
         if (key === "badge") applyBadge();
         return S;
     });
@@ -405,12 +416,105 @@ function handleIpc() {
             saveSettings();
         }
     });
+    ipcMain.on("hoc:status", (e, s) => {
+        if (!fromTerminal(e) || !s || typeof s !== "object") return;
+        status = { pnl: String(s.pnl || "").slice(0, 20), session: String(s.session || "").slice(0, 40) };
+        updateTray();
+    });
+    ipcMain.handle("hoc:notify", (e, n) => {
+        if (!fromTerminal(e) || !n || typeof n !== "object") return false;
+        if (S.hocToasts) {
+            hocToast(n);
+            return true;
+        }
+        if (!Notification.isSupported()) return false;
+        const sys = new Notification({ title: String(n.title || "HOC Terminal").slice(0, 90), body: String(n.body || "").slice(0, 220), icon: IS_MAC ? undefined : appIcon() });
+        sys.on("click", () => {
+            showWindow();
+            if (win && typeof n.url === "string" && n.url.startsWith("/")) win.loadURL(new URL(n.url, HOME).toString());
+        });
+        sys.show();
+        return true;
+    });
     ipcMain.handle("hoc:test", (e) => {
         if (!fromTerminal(e) || !Notification.isSupported()) return false;
         const n = new Notification({ title: "HOC Terminal", body: "Notifications are working. You'll see alerts like this one.", icon: IS_MAC ? undefined : appIcon() });
         n.on("click", () => showWindow());
         n.show();
         return true;
+    });
+}
+
+// ----- HOC-style notifications (v1.9): a small dark HOC card in the corner of the screen, with its own sound per kind -----
+const toasts = [];
+const TOAST_W = 360;
+const TOAST_H = 92;
+function placeToasts() {
+    const wa = screen.getPrimaryDisplay().workArea;
+    toasts.forEach((t, i) => {
+        try {
+            t.setPosition(wa.x + wa.width - TOAST_W - 16, wa.y + wa.height - 16 - (TOAST_H + 10) * (i + 1) + 10);
+        } catch {
+            // closed
+        }
+    });
+}
+function hocToast(n) {
+    const title = String(n.title || "HOC Terminal").slice(0, 90);
+    const body = String(n.body || "").slice(0, 220);
+    const kind = ["alert", "news", "booking", "session"].includes(n.kind) ? n.kind : "news";
+    const url = typeof n.url === "string" && n.url.startsWith("/") ? n.url : "/";
+    while (toasts.length >= 4) {
+        const old = toasts.shift();
+        try {
+            old.destroy();
+        } catch {
+            // gone
+        }
+    }
+    const t = new BrowserWindow({ width: TOAST_W, height: TOAST_H, frame: false, transparent: true, resizable: false, movable: false, minimizable: false, maximizable: false, alwaysOnTop: true, skipTaskbar: true, focusable: false, show: false, hasShadow: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, autoplayPolicy: "no-user-gesture-required" } });
+    t.setAlwaysOnTop(true, "screen-saver");
+    toasts.push(t);
+    placeToasts();
+    const accent = { alert: "#fbbf24", news: "#60a5fa", booking: "#4ade80", session: "#a78bfa" }[kind];
+    const notes = { alert: [880, 1320], news: [660], booking: [523.25, 783.99], session: [523.25, 659.25, 783.99] }[kind];
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const sound = n.sound === false ? "" : `try{const a=new AudioContext();${JSON.stringify(notes)}.forEach((f,i)=>{const o=a.createOscillator(),g=a.createGain();o.type="sine";o.frequency.value=f;const s=a.currentTime+i*.11;g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(.07,s+.015);g.gain.exponentialRampToValueAtTime(.0001,s+.5);o.connect(g).connect(a.destination);o.start(s);o.stop(s+.55)})}catch(e){}`;
+    const html = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:transparent;overflow:hidden;font:13px/1.4 -apple-system,"Segoe UI",Inter,sans-serif;-webkit-user-select:none;user-select:none;cursor:pointer}
+.c{position:absolute;inset:0;border-radius:14px;background:#0d0f13;border:1px solid rgba(255,255,255,.12);box-shadow:inset 3px 0 0 ${accent};display:flex;gap:12px;align-items:center;padding:12px 30px 12px 16px;box-sizing:border-box;color:#e8eaee;opacity:0;transform:translateX(30px);transition:opacity .3s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
+.c.in{opacity:1;transform:none}.l{width:34px;height:34px;border-radius:9px;background:#fff;color:#000;display:grid;place-items:center;font:800 10px/1 system-ui,sans-serif;letter-spacing:.08em;flex:none}
+.t{min-width:0}.t b{display:block;font-size:13.5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.t span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#b9bdc6;font-size:12.5px}
+.x{position:absolute;top:6px;right:10px;color:#6b7280;font-size:15px;text-decoration:none}.x:hover{color:#fff}</style>
+<div class="c" id="c"><div class="l">HOC</div><div class="t"><b>${esc(title)}</b><span>${esc(body)}</span></div><a class="x" href="hoc://close">×</a></div>
+<script>requestAnimationFrame(()=>document.getElementById("c").classList.add("in"));document.getElementById("c").addEventListener("click",(e)=>{if(!e.target.closest(".x"))location.href="hoc://open"});${sound}</script>`;
+    let closed = false;
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        const i = toasts.indexOf(t);
+        if (i >= 0) toasts.splice(i, 1);
+        try {
+            t.destroy();
+        } catch {
+            // gone
+        }
+        placeToasts();
+    };
+    t.webContents.on("will-navigate", (e, u) => {
+        e.preventDefault();
+        if (String(u).startsWith("hoc://open")) {
+            showWindow();
+            if (win) win.loadURL(new URL(url, HOME).toString());
+        }
+        close();
+    });
+    t.once("ready-to-show", () => t.showInactive());
+    t.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+    setTimeout(close, 7000);
+    t.on("closed", () => {
+        closed = true;
+        const i = toasts.indexOf(t);
+        if (i >= 0) toasts.splice(i, 1);
     });
 }
 
