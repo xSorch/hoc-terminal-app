@@ -20,4 +20,7 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     setFullScreen: (on) => ipcRenderer.send("hoc:fullscreen", on),
     isFullScreen: () => ipcRenderer.invoke("hoc:isfs"),
     onFullScreen: (cb) => ipcRenderer.on("hoc:fs", (_e, on) => cb(Boolean(on))),
+    // v1.9: today's P&L and the open session for the tray / menu bar, and HOC-style notifications
+    setStatus: (s) => ipcRenderer.send("hoc:status", s),
+    notify: (n) => ipcRenderer.invoke("hoc:notify", n),
 });
