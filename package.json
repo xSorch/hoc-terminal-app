@@ -12,6 +12,7 @@
     "start": "node scripts/icon.mjs && electron .",
     "icon": "node scripts/icon.mjs",
     "dist:win": "node scripts/icon.mjs && electron-builder --win --publish never",
+    "dist:win:signed": "node scripts/build-win-signed.js",
     "dist:mac": "node scripts/icon.mjs && electron-builder --mac --publish never"
   },
   "devDependencies": {
