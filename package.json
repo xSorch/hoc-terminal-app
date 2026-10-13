@@ -4,6 +4,7 @@
   "version": "1.6.0",
   "description": "HOC Terminal desktop app for Windows and macOS",
   "author": "HO Capital",
+  "license": "MIT",
   "homepage": "https://hocapital.net",
   "private": true,
   "main": "main.js",
