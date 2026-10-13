@@ -9,6 +9,10 @@ on:
         description: "Version (e.g. 1.0.0)"
         required: true
         default: "1.0.0"
+      mac_only:
+        description: "Mac only (keeps the signed Windows installers that are already on the release)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -18,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: ${{ fromJSON(inputs.mac_only && '["macos-latest"]' || '["windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
