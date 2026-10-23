@@ -20,6 +20,9 @@
     "electron": "33.2.1",
     "electron-builder": "25.1.8"
   },
+  "dependencies": {
+    "koffi": "2.9.0"
+  },
   "build": {
     "appId": "net.hocapital.terminal",
     "productName": "HOC Terminal",
@@ -35,7 +38,12 @@
       "package.json",
       "build/icon.png",
       "build/icon-win.png",
-      "build/icon.ico"
+      "build/icon.ico",
+      "!**/node_modules/koffi/src/**",
+      "!**/node_modules/koffi/vendor/**",
+      "!**/node_modules/koffi/doc/**",
+      "!**/node_modules/koffi/build/koffi/{linux,freebsd,openbsd,musl,darwin}_*/**",
+      "!**/node_modules/koffi/build/koffi/win32_i386/**"
     ],
     "artifactName": "HOC-Terminal-${version}-${os}-${arch}.${ext}",
     "win": {
@@ -103,7 +111,11 @@
           "path": "/Applications"
         }
       ]
-    }
+    },
+    "asarUnpack": [
+      "**/node_modules/koffi/build/koffi/win32_*/*.node"
+    ],
+    "npmRebuild": false
   },
   "type": "commonjs"
 }
