@@ -22,6 +22,22 @@ const naturalScroll = () => {
 const TB = 48;
 const TB_BG = "#060709";
 const overlayFor = (light) => (light ? { color: "#fefefe", symbolColor: "#475569", height: TB } : { color: TB_BG, symbolColor: "#9aa0a8", height: TB });
+// Windows 11 draws a thin light border around the window. Colour it like the terminal so it blends in (like DeepCharts):
+// DwmSetWindowAttribute(DWMWA_BORDER_COLOR = 34) through koffi. Windows 10 has no such border and just ignores it.
+const BORDER = { dark: [0x1e, 0x20, 0x26], light: [0xe2, 0xe5, 0xea] };
+let dwmSet = null;
+function winBorder(light) {
+    if (process.platform !== "win32" || !win || dwmSet === false) return;
+    try {
+        if (!dwmSet) dwmSet = require("koffi").load("dwmapi.dll").func("int __stdcall DwmSetWindowAttribute(uintptr_t hwnd, uint32_t attr, _In_ uint32_t *value, uint32_t size)");
+        const h = win.getNativeWindowHandle();
+        const hwnd = h.length >= 8 ? h.readBigUInt64LE(0) : h.readUInt32LE(0);
+        const [r, g, b] = light ? BORDER.light : BORDER.dark;
+        dwmSet(hwnd, 34, [r | (g << 8) | (b << 16)], 4); // COLORREF is 0x00BBGGRR
+    } catch {
+        dwmSet = false;
+    }
+}
 // sign-in pages and the offline page don't know about the app: give them a thin strip to drag the window by
 const STRIP = `(() => {
   if (document.getElementById("hoc-tb")) return;
@@ -288,6 +304,7 @@ function createWindow(show = true) {
             additionalArguments: [`--hoc-version=${app.getVersion()}`, "--hoc-tb=custom", `--hoc-natural=${naturalScroll() ? 1 : 0}`],
         },
     });
+    winBorder(lightUi);
     if (st.maximized) win.maximize();
     win.once("ready-to-show", () => show && win.show());
     ["resize", "move"].forEach((e) => win.on(e, () => saveState(win)));
@@ -407,6 +424,7 @@ function handleIpc() {
             try {
                 if (!IS_MAC) win.setTitleBarOverlay(overlayFor(light));
                 win.setBackgroundColor(light ? "#f4f5f7" : "#050505");
+                winBorder(light);
             } catch {
                 /* ignore */
             }
