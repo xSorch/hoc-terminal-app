@@ -5,6 +5,7 @@
 // background), keep running in the tray / menu bar when the window is closed, unread count on the app icon.
 const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, session, nativeTheme, screen, systemPreferences } = require("electron");
 const path = require("path");
+const { toastHtml } = require("./toast");
 const fs = require("fs");
 
 const HOME = "https://terminal.hocapital.net/";
@@ -579,7 +580,7 @@ function handleIpc() {
 // ----- HOC-style notifications (v1.9): a small dark HOC card in the corner of the screen, with its own sound per kind -----
 const toasts = [];
 const TOAST_W = 360;
-const TOAST_H = 92;
+const TOAST_H = 108;
 function placeToasts() {
     const wa = screen.getPrimaryDisplay().workArea;
     toasts.forEach((t, i) => {
@@ -607,17 +608,7 @@ function hocToast(n) {
     t.setAlwaysOnTop(true, "screen-saver");
     toasts.push(t);
     placeToasts();
-    const accent = { alert: "#fbbf24", news: "#60a5fa", booking: "#4ade80", session: "#a78bfa" }[kind];
-    const notes = { alert: [880, 1320], news: [660], booking: [523.25, 783.99], session: [523.25, 659.25, 783.99] }[kind];
-    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-    const sound = n.sound === false ? "" : `try{const a=new AudioContext();${JSON.stringify(notes)}.forEach((f,i)=>{const o=a.createOscillator(),g=a.createGain();o.type="sine";o.frequency.value=f;const s=a.currentTime+i*.11;g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(.07,s+.015);g.gain.exponentialRampToValueAtTime(.0001,s+.5);o.connect(g).connect(a.destination);o.start(s);o.stop(s+.55)})}catch(e){}`;
-    const html = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:transparent;overflow:hidden;font:13px/1.4 -apple-system,"Segoe UI",Inter,sans-serif;-webkit-user-select:none;user-select:none;cursor:pointer}
-.c{position:absolute;inset:0;border-radius:14px;background:#0d0f13;border:1px solid rgba(255,255,255,.12);box-shadow:inset 3px 0 0 ${accent};display:flex;gap:12px;align-items:center;padding:12px 30px 12px 16px;box-sizing:border-box;color:#e8eaee;opacity:0;transform:translateX(30px);transition:opacity .3s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
-.c.in{opacity:1;transform:none}.l{width:34px;height:34px;border-radius:9px;background:#fff;color:#000;display:grid;place-items:center;font:800 10px/1 system-ui,sans-serif;letter-spacing:.08em;flex:none}
-.t{min-width:0}.t b{display:block;font-size:13.5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.t span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#b9bdc6;font-size:12.5px}
-.x{position:absolute;top:6px;right:10px;color:#6b7280;font-size:15px;text-decoration:none}.x:hover{color:#fff}</style>
-<div class="c" id="c"><div class="l">HOC</div><div class="t"><b>${esc(title)}</b><span>${esc(body)}</span></div><a class="x" href="hoc://close">×</a></div>
-<script>requestAnimationFrame(()=>document.getElementById("c").classList.add("in"));document.getElementById("c").addEventListener("click",(e)=>{if(!e.target.closest(".x"))location.href="hoc://open"});${sound}</script>`;
+    const html = toastHtml(n, lightUi);
     let closed = false;
     const close = () => {
         if (closed) return;

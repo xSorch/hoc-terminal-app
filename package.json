@@ -34,6 +34,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "toast.js",
       "offline.html",
       "package.json",
       "build/icon.png",
