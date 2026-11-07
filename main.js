@@ -26,11 +26,11 @@ const overlayFor = (light) => (light ? { color: "#fefefe", symbolColor: "#475569
 // DwmSetWindowAttribute(DWMWA_BORDER_COLOR = 34) through koffi. Windows 10 has no such border and just ignores it.
 const BORDER = { dark: [0x1e, 0x20, 0x26], light: [0xe2, 0xe5, 0xea] };
 let dwmSet = null;
-function winBorder(light) {
-    if (process.platform !== "win32" || !win || dwmSet === false) return;
+function winBorder(light, w = win) {
+    if (process.platform !== "win32" || !w || dwmSet === false) return;
     try {
         if (!dwmSet) dwmSet = require("koffi").load("dwmapi.dll").func("int __stdcall DwmSetWindowAttribute(uintptr_t hwnd, uint32_t attr, _In_ uint32_t *value, uint32_t size)");
-        const h = win.getNativeWindowHandle();
+        const h = w.getNativeWindowHandle();
         const hwnd = h.length >= 8 ? h.readBigUInt64LE(0) : h.readUInt32LE(0);
         const [r, g, b] = light ? BORDER.light : BORDER.dark;
         dwmSet(hwnd, 34, [r | (g << 8) | (b << 16)], 4); // COLORREF is 0x00BBGGRR
@@ -277,6 +277,125 @@ function applyBadge() {
     updateTray();
 }
 
+// links: terminal + sign-in inside the app, everything else in the default browser.
+// v1.10: HOC Charts "New chart window" (/charts?ws=2 … 9) opens its own app window instead.
+const wsOf = (url) => {
+    try {
+        const u = new URL(url);
+        const id = u.searchParams.get("ws") || "";
+        return u.hostname === "terminal.hocapital.net" && u.pathname.replace(/\/$/, "") === "/charts" && /^[2-9]$/.test(id) ? id : "";
+    } catch {
+        return "";
+    }
+};
+function linkRules(wc) {
+    wc.setWindowOpenHandler(({ url }) => {
+        const id = wsOf(url);
+        if (id) {
+            chartWindow(id);
+            return { action: "deny" };
+        }
+        if (inside(url) && /terminal\.hocapital\.net/.test(url)) {
+            wc.loadURL(url);
+            return { action: "deny" };
+        }
+        if (/^https?:|^mailto:/.test(url)) shell.openExternal(url);
+        return { action: "deny" };
+    });
+    wc.on("will-navigate", (e, url) => {
+        if (!inside(url)) {
+            e.preventDefault();
+            if (/^https?:|^mailto:/.test(url)) shell.openExternal(url);
+        }
+    });
+}
+const winOptions = (extra) => ({
+    minWidth: 900,
+    minHeight: 600,
+    backgroundColor: lightUi ? "#f4f5f7" : "#050505",
+    show: false,
+    autoHideMenuBar: true,
+    icon: IS_MAC ? undefined : ICON_FILE,
+    titleBarStyle: IS_MAC ? "hiddenInset" : "hidden",
+    trafficLightPosition: { x: 18, y: 17 },
+    ...(IS_MAC ? {} : { titleBarOverlay: overlayFor(lightUi) }),
+    webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        spellcheck: true,
+        backgroundThrottling: false,
+        additionalArguments: [`--hoc-version=${app.getVersion()}`, "--hoc-tb=custom", `--hoc-natural=${naturalScroll() ? 1 : 0}`],
+    },
+    ...extra,
+});
+const tagUa = (wc) => wc.setUserAgent(wc.getUserAgent().replace(/\s?Electron\/\S+/, "").replace(/\s?hoc-terminal-desktop\/\S+/, "") + " HOCDesktop/" + app.getVersion());
+
+// ----- HOC Charts windows for more monitors (v1.10) -----
+// Each "New chart window" in HOC Charts is its own app window with its own markets and indicators (the terminal keeps
+// them apart). A new one goes full size on the next monitor; a saved workspace puts each one back where it was.
+const chartWins = new Map(); // "2" … "9" → BrowserWindow
+function chartWindow(id, b) {
+    if (!/^[2-9]$/.test(String(id))) return false;
+    id = String(id);
+    const old = chartWins.get(id);
+    if (old && !old.isDestroyed()) {
+        if (old.isMinimized()) old.restore();
+        old.show();
+        old.focus();
+        return true;
+    }
+    const displays = screen.getAllDisplays();
+    let r = null;
+    let fill = false;
+    if (b && [b.x, b.y, b.w, b.h].every((v) => Number.isFinite(Number(v))) && Number(b.w) >= 300 && Number(b.h) >= 200) {
+        const want = { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.w), height: Math.round(b.h) };
+        // only where a monitor still is (a saved workspace from a setup with more screens)
+        const d = screen.getDisplayMatching(want);
+        const wa = d.workArea;
+        const overlaps = want.x < wa.x + wa.width && want.x + want.width > wa.x && want.y < wa.y + wa.height && want.y + want.height > wa.y;
+        if (overlaps) r = want;
+    }
+    if (!r) {
+        const cur = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
+        const others = displays.filter((d) => d.id !== cur.id);
+        if (others.length) {
+            const wa = others[(Number(id) - 2) % others.length].workArea;
+            r = { x: wa.x, y: wa.y, width: wa.width, height: wa.height };
+            fill = true;
+        } else {
+            const wa = cur.workArea;
+            const k = Number(id) - 1;
+            r = { x: wa.x + 40 * k, y: wa.y + 30 * k, width: Math.max(900, Math.round(wa.width * 0.7)), height: Math.max(600, Math.round(wa.height * 0.8)) };
+        }
+    }
+    const w = new BrowserWindow(winOptions({ ...r, title: `HOC Charts · Window ${id}` }));
+    chartWins.set(id, w);
+    winBorder(lightUi, w);
+    w.once("ready-to-show", () => {
+        if (fill) w.maximize();
+        w.show();
+    });
+    w.on("closed", () => chartWins.get(id) === w && chartWins.delete(id));
+    tagUa(w.webContents);
+    linkRules(w.webContents);
+    const sendFs = () => !w.isDestroyed() && w.webContents.send("hoc:fs", w.isFullScreen());
+    w.on("enter-full-screen", sendFs);
+    w.on("leave-full-screen", sendFs);
+    w.webContents.on("dom-ready", () => w.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {}));
+    w.loadURL(`${HOME}charts?ws=${id}`);
+    return true;
+}
+// the window an IPC message came from (the main window or a chart window)
+const winOf = (e) => {
+    try {
+        return BrowserWindow.fromWebContents(e.sender) || win;
+    } catch {
+        return win;
+    }
+};
+
 function createWindow(show = true) {
     const st = loadState();
     win = new BrowserWindow({
@@ -327,23 +446,9 @@ function createWindow(show = true) {
 
     const wc = win.webContents;
     // a normal Chrome user agent (sign-in pages refuse "embedded browser" agents), tagged so the terminal knows it's the app
-    wc.setUserAgent(wc.getUserAgent().replace(/\s?Electron\/\S+/, "").replace(/\s?hoc-terminal-desktop\/\S+/, "") + " HOCDesktop/" + app.getVersion());
+    tagUa(wc);
 
-    // links: terminal + sign-in inside the app, everything else in the default browser
-    wc.setWindowOpenHandler(({ url }) => {
-        if (inside(url) && /terminal\.hocapital\.net/.test(url)) {
-            wc.loadURL(url);
-            return { action: "deny" };
-        }
-        if (/^https?:|^mailto:/.test(url)) shell.openExternal(url);
-        return { action: "deny" };
-    });
-    wc.on("will-navigate", (e, url) => {
-        if (!inside(url)) {
-            e.preventDefault();
-            if (/^https?:|^mailto:/.test(url)) shell.openExternal(url);
-        }
-    });
+    linkRules(wc);
     // no connection: a friendly page with a retry button
     wc.on("did-fail-load", (e, code, desc, url, isMain) => {
         if (isMain && code !== -3) win.loadFile(path.join(__dirname, "offline.html"), { query: { to: url || HOME } });
@@ -400,31 +505,39 @@ function handleIpc() {
     ipcMain.on("hoc:focus", (e) => fromTerminal(e) && showWindow());
     // Windows: the terminal reports the colour behind the window buttons (the top bar, or a pop-up's backdrop over it)
     ipcMain.on("hoc:tbcolor", (e, c) => {
-        if (!fromTerminal(e) || IS_MAC || !win || !/^#[0-9a-f]{6}$/i.test(String(c))) return;
+        const w = winOf(e);
+        if (!fromTerminal(e) || IS_MAC || !w || !/^#[0-9a-f]{6}$/i.test(String(c))) return;
         const n = parseInt(c.slice(1), 16);
         const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
         try {
-            win.setTitleBarOverlay({ color: c, symbolColor: lum > 140 ? "#475569" : "#9aa0a8", height: TB });
+            w.setTitleBarOverlay({ color: c, symbolColor: lum > 140 ? "#475569" : "#9aa0a8", height: TB });
         } catch {
             /* ignore */
         }
     });
     // full screen from the terminal (button or F11): native window full screen
     ipcMain.on("hoc:fullscreen", (e, on) => {
-        if (!fromTerminal(e) || !win) return;
-        win.setFullScreen(typeof on === "boolean" ? on : !win.isFullScreen());
+        const w = winOf(e);
+        if (!fromTerminal(e) || !w) return;
+        w.setFullScreen(typeof on === "boolean" ? on : !w.isFullScreen());
     });
-    ipcMain.handle("hoc:isfs", (e) => Boolean(fromTerminal(e) && win && win.isFullScreen()));
+    ipcMain.handle("hoc:isfs", (e) => {
+        const w = winOf(e);
+        return Boolean(fromTerminal(e) && w && w.isFullScreen());
+    });
+    // v1.10: HOC Charts asks for another chart window (optionally where a saved workspace had it)
+    ipcMain.handle("hoc:chartwin", (e, id, b) => (fromTerminal(e) ? chartWindow(String(id || ""), b && typeof b === "object" ? b : null) : false));
     // the terminal switched between light and dark: window buttons, window background and system theme follow
     ipcMain.on("hoc:theme", (e, t) => {
         if (!fromTerminal(e)) return;
         const light = t === "light";
         nativeTheme.themeSource = light ? "light" : "dark";
-        if (win) {
+        for (const w of [win, ...chartWins.values()]) {
+            if (!w || w.isDestroyed()) continue;
             try {
-                if (!IS_MAC) win.setTitleBarOverlay(overlayFor(light));
-                win.setBackgroundColor(light ? "#f4f5f7" : "#050505");
-                winBorder(light);
+                if (!IS_MAC) w.setTitleBarOverlay(overlayFor(light));
+                w.setBackgroundColor(light ? "#f4f5f7" : "#050505");
+                winBorder(light, w);
             } catch {
                 /* ignore */
             }

@@ -23,4 +23,6 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     // v1.9: today's P&L and the open session for the tray / menu bar, and HOC-style notifications
     setStatus: (s) => ipcRenderer.send("hoc:status", s),
     notify: (n) => ipcRenderer.invoke("hoc:notify", n),
+    // v1.10: HOC Charts "New chart window" – its own app window, full size on the next monitor (or where a saved workspace had it)
+    openChartWindow: (id, bounds) => ipcRenderer.invoke("hoc:chartwin", id, bounds),
 });
