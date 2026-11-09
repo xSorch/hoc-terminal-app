@@ -3,7 +3,7 @@
 // other links open in the normal browser.
 // App settings (Settings › Desktop app in the terminal): open when the computer starts (optionally in the
 // background), keep running in the tray / menu bar when the window is closed, unread count on the app icon.
-const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, session, nativeTheme, screen, systemPreferences } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, session, nativeTheme, screen, systemPreferences, net } = require("electron");
 const path = require("path");
 const { toastHtml } = require("./toast");
 const fs = require("fs");
@@ -388,6 +388,7 @@ function chartWindow(id, b, path) {
     w.on("enter-full-screen", sendFs);
     w.on("leave-full-screen", sendFs);
     w.webContents.on("dom-ready", () => w.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {}));
+    loadGuard(w);
     w.loadURL(`${HOME}${pg}?ws=${id}`);
     return true;
 }
@@ -399,6 +400,46 @@ const winOf = (e) => {
         return win;
     }
 };
+
+// 1.12 (Nov 9, Henrich: "It went black after I started up my pc and it auto started"): right after Windows starts, the
+// network or the graphics driver can still be getting ready, so the page never draws and the window stays black.
+// Each window now loads again by itself: no page after 20 s (offline page, which retries), a crashed page or graphics
+// process (reload), or a page that froze for 15 s (reload).
+function loadGuard(w) {
+    const wc = w.webContents;
+    let timer = null;
+    const arm = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (w.isDestroyed() || !wc.isLoading()) return;
+            const to = wc.getURL() || HOME;
+            wc.stop();
+            w.loadFile(path.join(__dirname, "offline.html"), { query: { to: /^https:\/\/terminal\.hocapital\.net\//.test(to) ? to : HOME } });
+        }, 20000);
+    };
+    wc.on("did-start-loading", arm);
+    wc.on("did-stop-loading", () => clearTimeout(timer));
+    wc.on("render-process-gone", (e, d) => {
+        if (d.reason === "clean-exit" || w.isDestroyed()) return;
+        setTimeout(() => !w.isDestroyed() && wc.reload(), 1000);
+    });
+    let hung = null;
+    w.on("unresponsive", () => {
+        clearTimeout(hung);
+        hung = setTimeout(() => !w.isDestroyed() && wc.reload(), 15000);
+    });
+    w.on("responsive", () => clearTimeout(hung));
+    w.on("closed", () => (clearTimeout(timer), clearTimeout(hung)));
+}
+// the graphics process crashed (often a driver still starting at boot): every window draws again
+function gpuGuard() {
+    app.on("child-process-gone", (e, d) => {
+        if (d.type !== "GPU" || d.reason === "clean-exit") return;
+        setTimeout(() => BrowserWindow.getAllWindows().forEach((w) => !w.isDestroyed() && w.webContents.getURL() && w.webContents.reload()), 1500);
+    });
+}
+// at login there may be no network yet: start on the offline page (it opens the terminal as soon as the network is back)
+const startUrl = () => (net.isOnline() ? null : HOME);
 
 function createWindow(show = true) {
     const st = loadState();
@@ -471,7 +512,9 @@ function createWindow(show = true) {
         e.preventDefault();
         win.setTitle("HOC Terminal");
     });
-    win.loadURL(HOME);
+    loadGuard(win);
+    if (startUrl()) win.loadFile(path.join(__dirname, "offline.html"), { query: { to: HOME } });
+    else win.loadURL(HOME);
     applyBadge();
 }
 
@@ -696,6 +739,7 @@ else {
         installerChoice();
         applyLogin();
         setTimeout(installerChoice, 6000); // "Run now" starts the app a moment before the startup box is saved
+        gpuGuard();
         handleDownloads();
         handlePermissions();
         handleIpc();
