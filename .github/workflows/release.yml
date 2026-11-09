@@ -3,6 +3,9 @@
 name: Release
 
 on:
+  # Nov 9: pushing a tag like v1.11.0 also builds and publishes that version
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
@@ -31,7 +34,7 @@ jobs:
           node-version: 20
       - name: Set the version
         shell: bash
-        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+        run: npm version "${{ inputs.version || github.ref_name }}" --no-git-tag-version --allow-same-version
       - run: npm install --no-audit --no-fund
       # Code signing switches on by itself when the certificates are saved as repository secrets
       # (Settings → Secrets and variables → Actions). Without them the builds are unsigned, as before.
@@ -80,8 +83,8 @@ jobs:
       - name: Publish to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
-          name: HOC Terminal ${{ inputs.version }}
+          tag_name: ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
+          name: HOC Terminal ${{ inputs.version || github.ref_name }}
           body: "HOC Terminal for Windows and Mac. Download it from the Downloads page in the HOC Terminal."
           files: |
             dist/*.exe

@@ -25,4 +25,6 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     notify: (n) => ipcRenderer.invoke("hoc:notify", n),
     // v1.10: HOC Charts "New chart window" – its own app window, full size on the next monitor (or where a saved workspace had it)
     openChartWindow: (id, bounds) => ipcRenderer.invoke("hoc:chartwin", id, bounds),
+    // 1.11: any terminal page in its own window (e.g. "/options"), placed on the next monitor or where a workspace saved it
+    openWindow: (id, bounds, path) => ipcRenderer.invoke("hoc:chartwin", id, bounds, path),
 });

@@ -337,14 +337,17 @@ const tagUa = (wc) => wc.setUserAgent(wc.getUserAgent().replace(/\s?Electron\/\S
 // Each "New chart window" in HOC Charts is its own app window with its own markets and indicators (the terminal keeps
 // them apart). A new one goes full size on the next monitor; a saved workspace puts each one back where it was.
 const chartWins = new Map(); // "2" … "9" → BrowserWindow
-function chartWindow(id, b) {
+// 1.11 (Nov 9, Henrich: multi-monitor on every page): any terminal page can open in its own window (path), not only HOC Charts
+function chartWindow(id, b, path) {
     if (!/^[2-9]$/.test(String(id))) return false;
     id = String(id);
+    const pg = /^\/[a-z0-9/-]{0,60}$/.test(String(path || "")) ? String(path).slice(1) : "charts";
     const old = chartWins.get(id);
     if (old && !old.isDestroyed()) {
         if (old.isMinimized()) old.restore();
         old.show();
         old.focus();
+        if (path) old.loadURL(`${HOME}${pg}?ws=${id}`);
         return true;
     }
     const displays = screen.getAllDisplays();
@@ -371,7 +374,7 @@ function chartWindow(id, b) {
             r = { x: wa.x + 40 * k, y: wa.y + 30 * k, width: Math.max(900, Math.round(wa.width * 0.7)), height: Math.max(600, Math.round(wa.height * 0.8)) };
         }
     }
-    const w = new BrowserWindow(winOptions({ ...r, title: `HOC Charts · Window ${id}` }));
+    const w = new BrowserWindow(winOptions({ ...r, title: `HOC Terminal · Window ${id}` }));
     chartWins.set(id, w);
     winBorder(lightUi, w);
     w.once("ready-to-show", () => {
@@ -385,7 +388,7 @@ function chartWindow(id, b) {
     w.on("enter-full-screen", sendFs);
     w.on("leave-full-screen", sendFs);
     w.webContents.on("dom-ready", () => w.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {}));
-    w.loadURL(`${HOME}charts?ws=${id}`);
+    w.loadURL(`${HOME}${pg}?ws=${id}`);
     return true;
 }
 // the window an IPC message came from (the main window or a chart window)
@@ -527,7 +530,7 @@ function handleIpc() {
         return Boolean(fromTerminal(e) && w && w.isFullScreen());
     });
     // v1.10: HOC Charts asks for another chart window (optionally where a saved workspace had it)
-    ipcMain.handle("hoc:chartwin", (e, id, b) => (fromTerminal(e) ? chartWindow(String(id || ""), b && typeof b === "object" ? b : null) : false));
+    ipcMain.handle("hoc:chartwin", (e, id, b, path) => (fromTerminal(e) ? chartWindow(String(id || ""), b && typeof b === "object" ? b : null, typeof path === "string" ? path : null) : false));
     // the terminal switched between light and dark: window buttons, window background and system theme follow
     ipcMain.on("hoc:theme", (e, t) => {
         if (!fromTerminal(e)) return;
