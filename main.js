@@ -527,7 +527,9 @@ function handleDownloads() {
 // only notifications, clipboard and full screen are allowed, and only for the terminal / sign-in pages
 function handlePermissions() {
     session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => {
-        const ok = ["notifications", "clipboard-sanitized-write", "clipboard-read", "fullscreen"].includes(perm) && inside(details.requestingUrl || wc.getURL());
+        // 1.13 (Nov 14, Henrich): full screen is judged by the page it happens in, so the YouTube / Vimeo player's own
+        // full-screen button works in Academy lessons (the request comes from the video's frame, not the terminal)
+        const ok = perm === "fullscreen" ? inside(wc.getURL()) : ["notifications", "clipboard-sanitized-write", "clipboard-read"].includes(perm) && inside(details.requestingUrl || wc.getURL());
         cb(ok);
     });
 }
