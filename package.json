@@ -40,6 +40,7 @@
       "build/icon.png",
       "build/icon-win.png",
       "build/icon.ico",
+      "build/badges/*.png",
       "!**/node_modules/koffi/src/**",
       "!**/node_modules/koffi/vendor/**",
       "!**/node_modules/koffi/doc/**",

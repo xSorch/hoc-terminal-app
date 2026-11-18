@@ -214,15 +214,35 @@ const DIGITS = {
     "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
 };
 const badges = new Map();
+// Nov 18: the badge drawn at build time with a real font (build/badges), one picture per display scale; the pixel-font
+// one below stays as the fallback
+function fileBadge(label) {
+    try {
+        const img = nativeImage.createEmpty();
+        const name = label === "9+" ? "9p" : label;
+        for (const [sz, f] of [[16, 1], [20, 1.25], [24, 1.5], [28, 1.75], [32, 2]]) {
+            const p = path.join(__dirname, "build", "badges", `${name}-${sz}.png`);
+            if (fs.existsSync(p)) img.addRepresentation({ scaleFactor: f, buffer: fs.readFileSync(p) });
+        }
+        return img.isEmpty() ? null : img;
+    } catch {
+        return null;
+    }
+}
 function countBadge(count) {
     const label = count > 9 ? "9+" : String(count);
     if (badges.has(label)) return badges.get(label);
+    const fb = fileBadge(label);
+    if (fb) {
+        badges.set(label, fb);
+        return fb;
+    }
     const N = 32; // drawn at 2x for a sharp 16 px overlay
     const SS = 4; // supersampling for smooth edges
     const buf = Buffer.alloc(N * N * 4);
     const c = (N - 1) / 2;
-    const R = 15.5; // outer edge (dark ring)
-    const r = 13.5; // red disc
+    const R = 15.5; // outer edge
+    const r = 15.5; // red disc, full size (no ring)
     // the digits: 5 × 7 pixel font, each font pixel 2 × 2 (1 × 1 for "9+")
     const px = label.length > 1 ? 2 : 2;
     const gw = label.length * 5 + (label.length - 1);
@@ -248,8 +268,8 @@ function countBadge(count) {
                 }
             const ao = outer / (SS * SS);
             const ai = inner / (SS * SS);
-            // colour: ring #1c1c1f, disc #ef4444, digits white
-            let [rr, gg, bb] = [28, 28, 31];
+            // colour: disc #f23f43, digits white (Nov 18: no dark ring, like Discord)
+            let [rr, gg, bb] = [242, 63, 67];
             if (ai > 0) {
                 const t = ai;
                 rr = Math.round(28 + (239 - 28) * t);

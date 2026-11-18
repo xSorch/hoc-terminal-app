@@ -3,7 +3,7 @@
 // build/icon-win.svg -> build/icon-win.png (Windows: just the white logo, no square behind it)
 //                    -> build/icon.ico     (Windows: every size Windows shows – 16 to 256 px – each drawn sharp at its
 //                                           own size, so the Start menu, desktop and taskbar icons aren't blurry)
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { Resvg } from "@resvg/resvg-js";
 const svgOf = (name) => readFileSync(new URL(`../build/${name}.svg`, import.meta.url), "utf8");
 const render = (svg, size) => new Resvg(svg, { fitTo: { mode: "width", value: size } }).render().asPng();
@@ -13,7 +13,9 @@ for (const name of ["icon", "icon-win"]) {
     console.log(`${name}.png`, png.length, "bytes");
 }
 // .ico with PNG entries (Windows Vista and later)
-const SIZES = [16, 20, 24, 32, 40, 48, 64, 72, 96, 128, 256];
+// Nov 18 (Henrich: the taskbar icon "seem off and low quality"): Windows draws the taskbar icon at 24 px × the display
+// scale (30 px at 125%, 36 px at 150%, 42 at 175%); without those sizes it shrank the 40 / 48 px one and blurred it
+const SIZES = [16, 20, 24, 30, 32, 36, 40, 42, 48, 60, 64, 72, 80, 96, 128, 256];
 const win = svgOf("icon-win");
 const imgs = SIZES.map((s) => render(win, s));
 const head = Buffer.alloc(6 + 16 * SIZES.length);
@@ -77,3 +79,18 @@ const dmg = svgOf("dmg-background");
 writeFileSync(new URL("../build/background.png", import.meta.url), render(dmg, 540));
 writeFileSync(new URL("../build/background@2x.png", import.meta.url), render(dmg, 1080));
 console.log("background.png + background@2x.png");
+
+// Nov 18: the unread badge on the Windows taskbar, drawn with a real font at every display scale (it was a 5 × 7 pixel
+// font scaled up, which looked blocky): a plain red disc like Discord's (no edge), white bold count, 1–9 and "9+".
+// main.js puts the sizes together as one image (16 px at 100%, 20 at 125%, 24 at 150%, 28 at 175%, 32 at 200%).
+mkdirSync(new URL("../build/badges/", import.meta.url), { recursive: true });
+const badgeSvg = (label) => {
+    const two = label.length > 1;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="31" fill="#f23f43"/><text x="32" y="${two ? 41.5 : 43.5}" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-weight="700" font-size="${two ? 25 : 32}" letter-spacing="${two ? -1 : 0}" fill="#fff">${label}</text></svg>`;
+};
+for (const label of ["1", "2", "3", "4", "5", "6", "7", "8", "9", "9+"])
+    for (const sz of [16, 20, 24, 28, 32]) {
+        const png = new Resvg(badgeSvg(label), { fitTo: { mode: "width", value: sz }, font: { loadSystemFonts: true, defaultFontFamily: "Arial" } }).render().asPng();
+        writeFileSync(new URL(`../build/badges/${label === "9+" ? "9p" : label}-${sz}.png`, import.meta.url), png);
+    }
+console.log("badges: 1-9, 9+ at 16/20/24/28/32 px");
