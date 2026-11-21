@@ -86,7 +86,9 @@ console.log("background.png + background@2x.png");
 mkdirSync(new URL("../build/badges/", import.meta.url), { recursive: true });
 const badgeSvg = (label) => {
     const two = label.length > 1;
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="31" fill="#f23f43"/><text x="32" y="${two ? 41.5 : 43.5}" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-weight="700" font-size="${two ? 25 : 32}" letter-spacing="${two ? -1 : 0}" fill="#fff">${label}</text></svg>`;
+    // Nov 21 (Henrich, next to the Windows Mail badge: "Look at the difference"): Mail's red is deeper and its count fills the disc;
+    // ours was a pinker red with a small count you could hardly read at 16 px. Now the same deep red, full-size disc, bigger bold count.
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="32" fill="#f21f1f"/><text x="${two ? 31 : 32}" y="${two ? 45 : 47}" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-weight="800" font-size="${two ? 36 : 44}" letter-spacing="${two ? -3 : 0}" fill="#fff">${label}</text></svg>`;
 };
 for (const label of ["1", "2", "3", "4", "5", "6", "7", "8", "9", "9+"])
     for (const sz of [16, 20, 24, 28, 32]) {
