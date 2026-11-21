@@ -27,4 +27,7 @@ contextBridge.exposeInMainWorld("hocDesktop", {
     openChartWindow: (id, bounds) => ipcRenderer.invoke("hoc:chartwin", id, bounds),
     // 1.11: any terminal page in its own window (e.g. "/options"), placed on the next monitor or where a workspace saved it
     openWindow: (id, bounds, path) => ipcRenderer.invoke("hoc:chartwin", id, bounds, path),
+    // 1.15 (Nov 21, ticker tabs): keep this window above other programs
+    setOnTop: (on) => ipcRenderer.invoke("hoc:ontop", Boolean(on)),
+    isOnTop: () => ipcRenderer.invoke("hoc:isontop"),
 });

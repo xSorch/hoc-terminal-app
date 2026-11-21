@@ -595,6 +595,17 @@ function handleIpc() {
         return Boolean(fromTerminal(e) && w && w.isFullScreen());
     });
     // v1.10: HOC Charts asks for another chart window (optionally where a saved workspace had it)
+    // 1.15 (Nov 21, ticker tabs "On top"): this window (main or a popped-out one) stays above other programs
+    ipcMain.handle("hoc:ontop", (e, on) => {
+        const w = winOf(e);
+        if (!fromTerminal(e) || !w || w.isDestroyed()) return false;
+        w.setAlwaysOnTop(Boolean(on), "floating");
+        return w.isAlwaysOnTop();
+    });
+    ipcMain.handle("hoc:isontop", (e) => {
+        const w = winOf(e);
+        return Boolean(w && !w.isDestroyed() && w.isAlwaysOnTop());
+    });
     ipcMain.handle("hoc:chartwin", (e, id, b, path) => (fromTerminal(e) ? chartWindow(String(id || ""), b && typeof b === "object" ? b : null, typeof path === "string" ? path : null) : false));
     // the terminal switched between light and dark: window buttons, window background and system theme follow
     ipcMain.on("hoc:theme", (e, t) => {
